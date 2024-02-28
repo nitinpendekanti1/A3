@@ -413,4 +413,5 @@ CMakeFiles/A3.dir/src/main.cpp.o: /home/nitin/Documents/A3/src/main.cpp \
  /usr/include/c++/11/vector /usr/include/c++/11/bits/stl_vector.h \
  /usr/include/c++/11/bits/stl_bvector.h \
  /usr/include/c++/11/bits/vector.tcc \
- /home/nitin/Documents/A3/src/Material.h
+ /home/nitin/Documents/A3/src/Material.h \
+ /home/nitin/Documents/A3/src/Light.h

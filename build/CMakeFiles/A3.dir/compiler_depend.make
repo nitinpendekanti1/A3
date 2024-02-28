@@ -2059,7 +2059,8 @@ CMakeFiles/A3.dir/src/main.cpp.o: ../src/main.cpp \
   /usr/include/c++/11/bits/stl_vector.h \
   /usr/include/c++/11/bits/stl_bvector.h \
   /usr/include/c++/11/bits/vector.tcc \
-  ../src/Material.h
+  ../src/Material.h \
+  ../src/Light.h
 
 
 /usr/include/c++/11/math.h:
@@ -2731,6 +2732,8 @@ CMakeFiles/A3.dir/src/main.cpp.o: ../src/main.cpp \
 /usr/include/x86_64-linux-gnu/bits/types/timer_t.h:
 
 /usr/include/x86_64-linux-gnu/sys/cdefs.h:
+
+../src/Light.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
 
