@@ -28,10 +28,14 @@ string RESOURCE_DIR = "./"; // Where the resources are loaded from
 bool OFFLINE = false;
 
 shared_ptr<Camera> camera;
-shared_ptr<Program> prog;
+shared_ptr<Program> prog_normal;
+shared_ptr<Program> prog_blinnPhong;
 shared_ptr<Shape> shape;
 
 bool keyToggles[256] = {false}; // only for English keyboards!
+
+enum ShaderMode { NORMAL, BLINN_PHONG };
+ShaderMode currentShaderMode = NORMAL;
 
 // This function is called when a GLFW error occurs
 static void error_callback(int error, const char *description)
@@ -45,6 +49,16 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 	if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, GL_TRUE);
 	}
+
+	switch(key) {
+        case GLFW_KEY_S: 
+        {
+            if(action == GLFW_PRESS) {
+                currentShaderMode = (currentShaderMode == NORMAL) ? BLINN_PHONG : NORMAL;
+            }
+            break;
+        }
+    }
 }
 
 // This function is called when the mouse is clicked
@@ -117,15 +131,26 @@ static void init()
 	// Enable z-buffer test.
 	glEnable(GL_DEPTH_TEST);
 
-	prog = make_shared<Program>();
-	prog->setShaderNames(RESOURCE_DIR + "normal_vert.glsl", RESOURCE_DIR + "normal_frag.glsl");
-	prog->setVerbose(true);
-	prog->init();
-	prog->addAttribute("aPos");
-	prog->addAttribute("aNor");
-	prog->addUniform("MV");
-	prog->addUniform("P");
-	prog->setVerbose(false);
+	prog_normal = make_shared<Program>();
+	prog_normal->setShaderNames(RESOURCE_DIR + "normal_vert.glsl", RESOURCE_DIR + "normal_frag.glsl");
+	prog_normal->setVerbose(true);
+	prog_normal->init();
+	prog_normal->addAttribute("aPos");
+	prog_normal->addAttribute("aNor");
+	prog_normal->addUniform("MV");
+	prog_normal->addUniform("P");
+	prog_normal->setVerbose(false);
+
+
+	prog_blinnPhong = make_shared<Program>();
+	prog_blinnPhong->setShaderNames(RESOURCE_DIR + "blinnphong_vert.glsl", RESOURCE_DIR + "blinnphong_frag.glsl");
+	prog_blinnPhong->setVerbose(true);
+	prog_blinnPhong->init();
+	prog_blinnPhong->addAttribute("aPos");
+	prog_blinnPhong->addAttribute("aNor");
+	prog_blinnPhong->addUniform("MV");
+	prog_blinnPhong->addUniform("P");
+	prog_blinnPhong->setVerbose(false);
 	
 	camera = make_shared<Camera>();
 	camera->setInitDistance(2.0f); // Camera's initial Z translation
@@ -173,12 +198,28 @@ static void render()
 	camera->applyProjectionMatrix(P);
 	MV->pushMatrix();
 	camera->applyViewMatrix(MV);
+
+	MV->scale(0.5f);
+	MV->translate(0.0f, -0.5f, 0.0f);
 	
-	prog->bind();
-	glUniformMatrix4fv(prog->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
-	glUniformMatrix4fv(prog->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
-	shape->draw(prog);
-	prog->unbind();
+	if(currentShaderMode != NORMAL) {
+		prog_normal->bind();
+		glUniformMatrix4fv(prog_normal->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+		glUniformMatrix4fv(prog_normal->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+		shape->draw(prog_normal);
+		prog_normal->unbind();
+	} else if(currentShaderMode != BLINN_PHONG) {
+		prog_blinnPhong->bind();
+		glUniformMatrix4fv(prog_blinnPhong->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+		glUniformMatrix4fv(prog_blinnPhong->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+		glUniform3f(prog_blinnPhong->getUniform("lightPos"), 1.0f, 1.0f, 1.0f);
+		glUniform3f(prog_blinnPhong->getUniform("ka"), 0.2f, 0.2f, 0.2f);
+		glUniform3f(prog_blinnPhong->getUniform("kd"), 0.8f, 0.7f, 0.7f);
+		glUniform3f(prog_blinnPhong->getUniform("ks"), 1.0f, 0.9f, 0.8f);
+		glUniform1f(prog_blinnPhong->getUniform("s"), 200.0f);
+		shape->draw(prog_blinnPhong);
+		prog_blinnPhong->unbind();
+	}
 	
 	MV->popMatrix();
 	P->popMatrix();
