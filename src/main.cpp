@@ -34,12 +34,14 @@ bool OFFLINE = false;
 shared_ptr<Camera> camera;
 shared_ptr<Program> prog_normal;
 shared_ptr<Program> prog_blinnPhong;
+shared_ptr<Program> prog_silhouette;
+shared_ptr<Program> prog_cel;
 shared_ptr<Shape> bunny_shape;
 shared_ptr<Shape> teapot_shape;
 
 bool keyToggles[256] = {false}; // only for English keyboards!
 
-enum ShaderMode { NORMAL, BLINN_PHONG };
+enum ShaderMode { NORMAL, BLINN_PHONG, SILHOUETTE, CEL };
 ShaderMode currentShaderMode = NORMAL;
 
 enum MaterialMode { PINK, BLUE, GRAY };
@@ -72,9 +74,17 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 	switch(key) {
         case GLFW_KEY_S: 
         {
-            if(action == GLFW_PRESS) {
-                currentShaderMode = (currentShaderMode == NORMAL) ? BLINN_PHONG : NORMAL;
-            }
+			if(action == GLFW_PRESS) {
+				if(currentShaderMode == NORMAL) {
+					currentShaderMode = BLINN_PHONG;
+				} else if(currentShaderMode == BLINN_PHONG) {
+					currentShaderMode = SILHOUETTE;
+				} else if(currentShaderMode == SILHOUETTE) {
+					currentShaderMode = CEL;
+				} else {
+					currentShaderMode = NORMAL;
+				}
+			}
             break;
         }
 		case GLFW_KEY_M: 
@@ -232,6 +242,35 @@ static void init()
 	prog_blinnPhong->addUniform("ks");
 	prog_blinnPhong->addUniform("s");
 	prog_blinnPhong->setVerbose(false);
+
+	prog_silhouette = make_shared<Program>();
+	prog_silhouette->setShaderNames(RESOURCE_DIR + "silhouette_vert.glsl", RESOURCE_DIR + "silhouette_frag.glsl");
+	prog_silhouette->setVerbose(true);
+	prog_silhouette->init();
+	prog_silhouette->addAttribute("aPos");
+	prog_silhouette->addAttribute("aNor");
+	prog_silhouette->addUniform("MV");
+	prog_silhouette->addUniform("P");
+	prog_silhouette->addUniform("N");
+	prog_silhouette->setVerbose(false);
+
+
+	prog_cel = make_shared<Program>();
+	prog_cel->setShaderNames(RESOURCE_DIR + "cel_vert.glsl", RESOURCE_DIR + "cel_frag.glsl");
+	prog_cel->setVerbose(true);
+	prog_cel->init();
+	prog_cel->addAttribute("aPos");
+	prog_cel->addAttribute("aNor");
+	prog_cel->addUniform("MV");
+	prog_cel->addUniform("P");
+	prog_cel->addUniform("lightPos");
+	prog_cel->addUniform("lightColor");
+	prog_cel->addUniform("ka");
+	prog_cel->addUniform("kd");
+	prog_cel->addUniform("ks");
+	prog_cel->addUniform("s");
+	prog_cel->addUniform("N");
+	prog_cel->setVerbose(false);
 	
 	camera = make_shared<Camera>();
 	camera->setInitDistance(2.0f); // Camera's initial Z translation
@@ -545,7 +584,181 @@ static void render()
 
 				prog_blinnPhong->unbind();
 		}
+	} else if(currentShaderMode == SILHOUETTE) {
+		prog_silhouette->bind();
+		MV->pushMatrix();
+		MV->translate(-0.5f, -0.5f, 0.0f);
+		MV->rotate(t, 0.0f, 1.0f, 0.0f);
+		MV->scale(0.5f);
+		glUniformMatrix4fv(prog_silhouette->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+		glUniformMatrix4fv(prog_silhouette->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+		glUniformMatrix4fv(prog_silhouette->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+		glm::mat4 MV_matrix = MV->topMatrix(); 
+		glm::mat3 normalMatrix = glm::mat3(MV_matrix); 
+		normalMatrix = glm::inverse(normalMatrix); 
+		normalMatrix = glm::transpose(normalMatrix);
+		glUniformMatrix3fv(prog_silhouette->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+		bunny_shape->draw(prog_silhouette);
+		MV->popMatrix();
+
+		MV->pushMatrix();
+		MV->translate(glm::vec3(0.5f, 0.0f, 0.0f)); 
+		glm::mat4 S(1.0f);
+		S[0][1] = 0.5f*cos(t);
+		MV->multMatrix(S);
+		MV->rotate(static_cast<float>(M_PI), glm::vec3(0.0f, 1.0f, 0.0f)); 
+		MV->scale(glm::vec3(0.5f));
+		glUniformMatrix4fv(prog_silhouette->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+		glUniformMatrix4fv(prog_silhouette->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+		glUniformMatrix4fv(prog_silhouette->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+		MV_matrix = MV->topMatrix(); 
+		normalMatrix = glm::mat3(MV_matrix); 
+		normalMatrix = glm::inverse(normalMatrix); 
+		normalMatrix = glm::transpose(normalMatrix);
+		glUniformMatrix3fv(prog_silhouette->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+		teapot_shape->draw(prog_silhouette);
+		MV->popMatrix();
+
+		prog_silhouette->unbind();
+	} else if(currentShaderMode == CEL) {
+		if(currentMaterial == PINK) {
+			prog_cel->bind();
+			MV->pushMatrix();
+			MV->translate(-0.5f, -0.5f, 0.0f);
+			MV->rotate(t, 0.0f, 1.0f, 0.0f);
+			MV->scale(0.5f);
+			glUniformMatrix4fv(prog_cel->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+			glUniformMatrix4fv(prog_cel->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+			glm::mat4 MV_matrix = MV->topMatrix(); 
+			glm::mat3 normalMatrix = glm::mat3(MV_matrix); 
+			normalMatrix = glm::inverse(normalMatrix); 
+			normalMatrix = glm::transpose(normalMatrix);
+			glUniformMatrix3fv(prog_cel->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+			glUniform3f(prog_cel->getUniform("lightPos"), light_one->posX, light_one->posY, light_one->posZ);
+			glUniform3f(prog_cel->getUniform("lightColor"), light_one->colX, light_one->colY, light_one->colZ);
+			glUniform3f(prog_cel->getUniform("ka"), pink_material->kax, pink_material->kay, pink_material->kaz);
+			glUniform3f(prog_cel->getUniform("kd"), pink_material->kdx, pink_material->kdy, pink_material->kdz);
+			glUniform3f(prog_cel->getUniform("ks"), pink_material->ksx, pink_material->ksy, pink_material->ksz);
+			glUniform1f(prog_cel->getUniform("s"), pink_material->s);
+			bunny_shape->draw(prog_cel);
+			MV->popMatrix();
+
+			MV->pushMatrix();
+			MV->translate(glm::vec3(0.5f, 0.0f, 0.0f)); 
+			glm::mat4 S(1.0f);
+			S[0][1] = 0.5f*cos(t);
+			MV->multMatrix(S);
+			MV->rotate(static_cast<float>(M_PI), glm::vec3(0.0f, 1.0f, 0.0f)); 
+			MV->scale(glm::vec3(0.5f));
+			glUniformMatrix4fv(prog_cel->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+			glUniformMatrix4fv(prog_cel->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+			MV_matrix = MV->topMatrix(); 
+			normalMatrix = glm::mat3(MV_matrix); 
+			normalMatrix = glm::inverse(normalMatrix); 
+			normalMatrix = glm::transpose(normalMatrix);
+			glUniformMatrix3fv(prog_cel->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+			glUniform3f(prog_cel->getUniform("lightPos"), light_one->posX, light_one->posY, light_one->posZ);
+			glUniform3f(prog_cel->getUniform("lightColor"), light_one->colX, light_one->colY, light_one->colZ);
+			glUniform3f(prog_cel->getUniform("ka"), pink_material->kax, pink_material->kay, pink_material->kaz);
+			glUniform3f(prog_cel->getUniform("kd"), pink_material->kdx, pink_material->kdy, pink_material->kdz);
+			glUniform3f(prog_cel->getUniform("ks"), pink_material->ksx, pink_material->ksy, pink_material->ksz);
+			glUniform1f(prog_cel->getUniform("s"), pink_material->s);
+			teapot_shape->draw(prog_cel);
+			MV->popMatrix();
+			prog_cel->unbind();
+		} else if(currentMaterial == BLUE) {
+			prog_cel->bind();
+			MV->pushMatrix();
+			MV->translate(-0.5f, -0.5f, 0.0f);
+			MV->rotate(t, 0.0f, 1.0f, 0.0f);
+			MV->scale(0.5f);
+			glUniformMatrix4fv(prog_cel->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+			glUniformMatrix4fv(prog_cel->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+			glm::mat4 MV_matrix = MV->topMatrix(); 
+			glm::mat3 normalMatrix = glm::mat3(MV_matrix); 
+			normalMatrix = glm::inverse(normalMatrix); 
+			normalMatrix = glm::transpose(normalMatrix);
+			glUniformMatrix3fv(prog_cel->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+			glUniform3f(prog_cel->getUniform("lightPos"), light_one->posX, light_one->posY, light_one->posZ);
+			glUniform3f(prog_cel->getUniform("lightColor"), light_one->colX, light_one->colY, light_one->colZ);
+			glUniform3f(prog_cel->getUniform("ka"), blue_material->kax, blue_material->kay, blue_material->kaz);
+			glUniform3f(prog_cel->getUniform("kd"), blue_material->kdx, blue_material->kdy, blue_material->kdz);
+			glUniform3f(prog_cel->getUniform("ks"), blue_material->ksx, blue_material->ksy, blue_material->ksz);
+			glUniform1f(prog_cel->getUniform("s"), blue_material->s);
+			bunny_shape->draw(prog_cel);
+			MV->popMatrix();
+
+			MV->pushMatrix();
+			MV->translate(glm::vec3(0.5f, 0.0f, 0.0f)); 
+			glm::mat4 S(1.0f);
+			S[0][1] = 0.5f*cos(t);
+			MV->multMatrix(S);
+			MV->rotate(static_cast<float>(M_PI), glm::vec3(0.0f, 1.0f, 0.0f)); 
+			MV->scale(glm::vec3(0.5f));
+			glUniformMatrix4fv(prog_cel->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+			glUniformMatrix4fv(prog_cel->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+			MV_matrix = MV->topMatrix(); 
+			normalMatrix = glm::mat3(MV_matrix); 
+			normalMatrix = glm::inverse(normalMatrix); 
+			normalMatrix = glm::transpose(normalMatrix);
+			glUniformMatrix3fv(prog_cel->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+			glUniform3f(prog_cel->getUniform("lightPos"), light_one->posX, light_one->posY, light_one->posZ);
+			glUniform3f(prog_cel->getUniform("lightColor"), light_one->colX, light_one->colY, light_one->colZ);
+			glUniform3f(prog_cel->getUniform("ka"), blue_material->kax, blue_material->kay, blue_material->kaz);
+			glUniform3f(prog_cel->getUniform("kd"), blue_material->kdx, blue_material->kdy, blue_material->kdz);
+			glUniform3f(prog_cel->getUniform("ks"), blue_material->ksx, blue_material->ksy, blue_material->ksz);
+			glUniform1f(prog_cel->getUniform("s"), blue_material->s);
+			teapot_shape->draw(prog_cel);
+			MV->popMatrix();
+			prog_cel->unbind();
+		} else if(currentMaterial == GRAY) {
+			prog_cel->bind();
+			MV->pushMatrix();
+			MV->translate(-0.5f, -0.5f, 0.0f);
+			MV->rotate(t, 0.0f, 1.0f, 0.0f);
+			MV->scale(0.5f);
+			glUniformMatrix4fv(prog_cel->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+			glUniformMatrix4fv(prog_cel->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+			glm::mat4 MV_matrix = MV->topMatrix(); 
+			glm::mat3 normalMatrix = glm::mat3(MV_matrix); 
+			normalMatrix = glm::inverse(normalMatrix); 
+			normalMatrix = glm::transpose(normalMatrix);
+			glUniformMatrix3fv(prog_cel->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+			glUniform3f(prog_cel->getUniform("lightPos"), light_one->posX, light_one->posY, light_one->posZ);
+			glUniform3f(prog_cel->getUniform("lightColor"), light_one->colX, light_one->colY, light_one->colZ);
+			glUniform3f(prog_cel->getUniform("ka"), gray_material->kax, gray_material->kay, gray_material->kaz);
+			glUniform3f(prog_cel->getUniform("kd"), gray_material->kdx, gray_material->kdy, gray_material->kdz);
+			glUniform3f(prog_cel->getUniform("ks"), gray_material->ksx, gray_material->ksy, gray_material->ksz);
+			glUniform1f(prog_cel->getUniform("s"), gray_material->s);
+			bunny_shape->draw(prog_cel);
+			MV->popMatrix();
+
+			MV->pushMatrix();
+			MV->translate(glm::vec3(0.5f, 0.0f, 0.0f)); 
+			glm::mat4 S(1.0f);
+			S[0][1] = 0.5f*cos(t);
+			MV->multMatrix(S);
+			MV->rotate(static_cast<float>(M_PI), glm::vec3(0.0f, 1.0f, 0.0f)); 
+			MV->scale(glm::vec3(0.5f));
+			glUniformMatrix4fv(prog_cel->getUniform("P"), 1, GL_FALSE, glm::value_ptr(P->topMatrix()));
+			glUniformMatrix4fv(prog_cel->getUniform("MV"), 1, GL_FALSE, glm::value_ptr(MV->topMatrix()));
+			MV_matrix = MV->topMatrix(); 
+			normalMatrix = glm::mat3(MV_matrix); 
+			normalMatrix = glm::inverse(normalMatrix); 
+			normalMatrix = glm::transpose(normalMatrix);
+			glUniformMatrix3fv(prog_cel->getUniform("N"), 1, GL_FALSE, glm::value_ptr(normalMatrix));
+			glUniform3f(prog_cel->getUniform("lightPos"), light_one->posX, light_one->posY, light_one->posZ);
+			glUniform3f(prog_cel->getUniform("lightColor"), light_one->colX, light_one->colY, light_one->colZ);
+			glUniform3f(prog_cel->getUniform("ka"), gray_material->kax, gray_material->kay, gray_material->kaz);
+			glUniform3f(prog_cel->getUniform("kd"), gray_material->kdx, gray_material->kdy, gray_material->kdz);
+			glUniform3f(prog_cel->getUniform("ks"), gray_material->ksx, gray_material->ksy, gray_material->ksz);
+			glUniform1f(prog_cel->getUniform("s"), gray_material->s);
+			teapot_shape->draw(prog_cel);
+			MV->popMatrix();
+			prog_cel->unbind();
+		} 
 	}
+
 	MV->popMatrix();
 	P->popMatrix();
 	
